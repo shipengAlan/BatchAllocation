@@ -2,12 +2,13 @@
 # coding=utf-8
 import math
 import copy
+import time as tc
 
 
 def Psi(x):  # ok
     # x is positive integer
     # it is decreasing function,whose value field is (0, 1]
-    return math.exp(-x + 1)
+    return math.exp((-x + 1) * 0.5)
 
 
 def timeIsEarly(A, B):
@@ -66,12 +67,10 @@ class CrowdSourcing(object):
             max_id = -1
             for j in range(len(self.worker_skills)):
                 CV = self.getRetailStyleCV(i, j)
-                print CV
                 if max_CV < CV:
                     max_CV = CV
                     max_id = j
             if max_id != -1:
-                print max_CV, '*'
                 if max_id in allocation_dict:
                     allocation_dict[max_id].append(i)
                 else:
@@ -93,7 +92,7 @@ class CrowdSourcing(object):
         down = set_B1 | set_B2
         return float(len(up)) / len(down)
 
-    def BatchMerge(self, B1, B2):
+    def BatchMerge(self, B1, B2):  # ok
         # accoding publishtime 归并排序
         i = 0
         j = 0
@@ -113,7 +112,7 @@ class CrowdSourcing(object):
             j += 1
         return newBatch
 
-    def LayeredBatchFormation(self):
+    def LayeredBatchFormation(self):   # ok
         # init, every task is a batch
         BatchList = [[i] for i in xrange(len(self.task_skills))]
         i = 1
@@ -123,7 +122,7 @@ class CrowdSourcing(object):
         if len(Layer[i]) == 1:
             c = 1
         while c == 0:
-            Max_O = 0
+            Max_O = -1
             x = 0
             y = 0
             for j in xrange(len(Layer[i])):
@@ -135,7 +134,7 @@ class CrowdSourcing(object):
                         Max_O = Ojk
                         x = j
                         y = k
-            if Max_O == 0:
+            if Max_O == -1:
                 c = 1
             else:
                 Bnew = self.BatchMerge(Layer[i][x], Layer[i][y])
@@ -151,7 +150,7 @@ class CrowdSourcing(object):
                 c = 1
         return Layer
 
-    def getBatchLayeredCVOfSingleWorker(self, workerid, Batch):
+    def getBatchLayeredCVOfSingleWorker(self, workerid, Batch):  # ok
         skill_set = set(self.worker_skills[workerid])
         up = 0
         down = 0
@@ -161,8 +160,8 @@ class CrowdSourcing(object):
             up += len(skill_set & task_skill_set)
         CB = float(up) / down
         sum_Occ_up = 0
-        for i in range(len(Batch)):
-            sum_Occ_up += float(self.worker_wage[workerid]) / (Psi(i + 1) * self.task_budget[Batch[i]])
+        for i in xrange(len(Batch)):
+            sum_Occ_up += (float(self.worker_wage[workerid]) / (Psi(i + 1) * self.task_budget[Batch[i]]))
         Occ = 0
         if len(Batch) != 0:
             Occ = sum_Occ_up / float(len(Batch))
@@ -170,18 +169,21 @@ class CrowdSourcing(object):
         for tid in Batch:
             sum_Est += float(self.worker_task_estimated_completed_time[workerid][tid])
         R = float(self.worker_reputation[workerid])
-        result = (self.lBeta[0] * CB + self.lBeta[1] * R) / (self.lBeta[2] * Occ + self.lBeta[3] * sum_Est)
+        avg_Est = 0
+        if len(Batch) != 0:
+            avg_Est = sum_Est / float(len(Batch))
+        result = (self.lBeta[0] * CB + self.lBeta[1] * R) / (self.lBeta[2] * Occ + self.lBeta[3] * avg_Est)
         return result
 
-    def getBatchLayeredCV(self, workerid, Batch):
+    def getBatchLayeredCV(self, workerid, Batch):  # ok
         result = self.getBatchLayeredCVOfSingleWorker(workerid, Batch)
         sum = 0
-        for wid in range(len(self.worker_skills)):
+        for wid in xrange(len(self.worker_skills)):
             if wid != workerid:
                 sum += (self.getBatchLayeredCVOfSingleWorker(wid, Batch) / float(self.worker_distance[wid][workerid]))
         return self.lAlpha[0] * result + self.lAlpha[1] * sum
 
-    def argMaxBatchLayeredCV(self, Wset, Batch):
+    def argMaxBatchLayeredCV(self, Wset, Batch):  # ok
         max_wid = -1
         max_CV = -1
         for wid in Wset:
@@ -191,14 +193,17 @@ class CrowdSourcing(object):
                 max_wid = wid
         return max_wid
 
-    def BatchLayeredAllocation(self, L):
+    def BatchLayeredAllocation(self, L):  # ok
         Layer = copy.deepcopy(L)
+        print Layer
         i = len(Layer)
         c1 = 0
         allocation_dict = {}
-        W = [v for v in range(len(self.worker_skills))]
+        W = [v for v in xrange(len(self.worker_skills))]
+        start = tc.clock()
         while i > 0 and c1 == 0:
             j = 0
+            print "@", i
             while j < len(Layer[i]):
                 batch = Layer[i][j]
                 c2 = 0
@@ -207,28 +212,34 @@ class CrowdSourcing(object):
                     wid = self.argMaxBatchLayeredCV(Wtemp, batch)
                     time = 0
                     c3 = 0
-                    for t in range(len(batch)):
-                        tid = batch(t)
+                    for t in xrange(len(batch)):
+                        tid = batch[t]
                         time = time + self.worker_task_estimated_completed_time[wid][tid]
                         if time > self.task_due_date[tid]:
                             c3 = 1
+                            print 'time'
                         if Psi(t + 1) * self.task_budget[tid] < self.worker_wage[wid]:
                             c3 = 1
+                            print 'money'
                     if c3 == 0:
                         allocation_dict[wid] = batch
+                        print allocation_dict
                         W.remove(wid)
                         c2 = 1
                         Layer[i].remove(batch)
-                        for k in range(1, j):
+                        for k in xrange(1, i):
                             e = 0
                             while e < len(Layer[k]):
                                 b = Layer[k][e]
                                 relation = set(b).difference(batch)
                                 if len(relation) == 0:  # b 被包含于 batch
+                                    print "-", Layer[k]
                                     Layer[k].remove(b)
+                                    print "#", Layer[k]
                                     e -= 1
                                 e += 1
                         j -= 1
+                        print Layer, i
                     Wtemp.remove(wid)
                     if len(Wtemp) == 0:
                         c2 = 1
@@ -237,17 +248,19 @@ class CrowdSourcing(object):
             if i > 0:
                 if len(Layer[i]) == 0:
                     c1 = 1
+        end = tc.clock()
+        print end - start
         return allocation_dict
 
     # core-based batch formation and allocation
-    def OverlappingDegreeOfTask(self, tid1, tid2):
+    def OverlappingDegreeOfTask(self, tid1, tid2):  # ok
         set_T1 = set(self.task_skills[tid1])
         set_T2 = set(self.task_skills[tid2])
         up = set_T1 & set_T2
         down = set_T1 | set_T2
-        return len(up) / down(down)
+        return float(len(up)) / len(down)
 
-    def argMaxSumOfSimilaritiesWithOtherTasks(self, TidSet):
+    def argMaxSumOfSimilaritiesWithOtherTasks(self, TidSet):  # ok
         # TidSet
         max_sum = -1
         core_tid = -1
@@ -342,10 +355,8 @@ class CrowdSourcing(object):
         return allocation_dict
 
 if __name__ == "__main__":
-    #for i in range(1, 7):
-    #    print i, Psi(i)
     crowds = CrowdSourcing()
-    crowds.task_budget = [1, 5, 8, 6, 0, 7]
+    crowds.task_budget = [18, 17, 18, 18, 19, 19]
     #print crowds.PaymentOfBatch([i for i in range(6)])
     crowds.rAlpha = [0.1, 0.1, 0.8]
     crowds.task_skills = [[1, 5, 4], [1, 3], [2, 4], [5, 3], [1, 2], [2, 3, 5, 4]]
@@ -364,6 +375,34 @@ if __name__ == "__main__":
     print crowds.OverlappingDegreeOfBatch(B1, B2)
     print B1
     print B2
-    crowds.task_publishtime = [0, 1, 2, 2, 3, 3]
+    crowds.task_publishtime = [0, 4, 2, 2, 3, 3]
     layer = crowds.LayeredBatchFormation()
     print layer
+    crowds.worker_task_estimated_completed_time = [[1, 4, 6, 5, 7, 2],
+                                                   [2, 3, 4, 3, 5, 1],
+                                                   [1, 4, 5, 2, 7, 2],
+                                                   [0, 5, 6, 4, 7, 2],
+                                                   [1, 4, 3, 2, 6, 3],
+                                                   [2, 3, 5, 3, 7, 2]]
+    crowds.lBeta = [0.3, 0.2, 0.3, 0.2]
+    for i in range(1, 7):
+        print i, Psi(i)
+    print crowds.getBatchLayeredCVOfSingleWorker(3, B1)
+    crowds.worker_distance = [[0, 1, 2, 3, 4, 5],
+                              [1, 0, 1, 2, 3, 4],
+                              [2, 1, 0, 1, 2, 3],
+                              [3, 2, 1, 0, 1, 2],
+                              [4, 3, 2, 1, 0, 1],
+                              [5, 4, 3, 2, 1, 0]]
+    crowds.lAlpha = [1.0, 0.0]
+    print crowds.getBatchLayeredCV(3, B1)
+    print crowds.argMaxBatchLayeredCV([i for i in range(6)], B1)
+    crowds.task_due_date = [30, 31, 30, 35, 40, 36]
+    print crowds.BatchLayeredAllocation(layer)
+    #print layer
+    start = tc.clock()
+    print crowds.RetailStyleAllocation()
+    end = tc.clock()
+    print end - start
+    print crowds.OverlappingDegreeOfTask(0, 5)
+    print crowds.argMaxSumOfSimilaritiesWithOtherTasks([i for i in range(6)])
