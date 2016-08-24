@@ -79,6 +79,58 @@ class CrowdSourcing(object):
                 print 'error', i
         return allocation_dict
 
+    def argMaxRetailStyleCV(self, Wtemp, tid):
+        max_CV = -1
+        max_id = -1
+        for wid in Wtemp:
+            CV = self.getRetailStyleCV(tid, wid)
+            if CV > max_CV:
+                max_CV = CV
+                max_id = wid
+        return max_id
+
+    def RetailStyleAllocation2(self):  # ok
+        # return dict
+        start = tc.clock()
+        allocation_dict = {}
+        W = [i for i in range(len(self.worker_skills))]
+        T = [i for i in range(len(self.task_skills))]
+        # 按照截止时间排序
+        listLength = len(T)
+        while listLength > 0:
+            for i in range(listLength - 1):
+                if timeIsEarly(self.task_due_date[T[i + 1]], self.task_due_date[T[i]]):
+                    T[i] = T[i] + T[i + 1]
+                    T[i + 1] = T[i] - T[i + 1]
+                    T[i] = T[i] - T[i + 1]
+            listLength -= 1
+        # 按照截止时间排序
+        Wtime = [0 for i in range(len(self.worker_skills))]
+        i = 0
+        while i < len(T):
+            tid = T[i]
+            c1 = 0
+            Wtemp = copy.copy(W)
+            while c1 == 0:
+                wid = self.argMaxRetailStyleCV(Wtemp, tid)
+                c2 = 0
+                if self.task_budget[tid] < self.worker_wage[wid] and Wtime[wid] + self.worker_task_estimated_completed_time[wid][tid] < self.task_due_date[tid]:
+                    c2 = 1
+                    Wtime[wid] += self.worker_task_estimated_completed_time[wid][tid]
+                if c2 == 0:
+                    if wid in allocation_dict:
+                        allocation_dict[wid].append(tid)
+                    else:
+                        allocation_dict[wid] = [tid]
+                    c1 = 1
+                Wtemp.remove(wid)
+                if len(Wtemp) == 0:
+                    c1 = 1
+            i += 1
+        end = tc.clock()
+        print end - start
+        return allocation_dict
+
     def OverlappingDegreeOfBatch(self, B1, B2):  # ok
         set_B1 = []
         for i in range(len(B1)):
@@ -99,6 +151,7 @@ class CrowdSourcing(object):
         newBatch = []
         while i < len(B1) and j < len(B2):
             if timeIsEarly(self.task_publishtime[B1[i]], self.task_publishtime[B2[j]]):
+            # if timeIsEarly(self.task_due_date[B1[i]], self.task_due_date[B2[j]]):
                 newBatch.append(B1[i])
                 i += 1
             else:
@@ -195,7 +248,6 @@ class CrowdSourcing(object):
 
     def BatchLayeredAllocation(self, L):  # ok
         Layer = copy.deepcopy(L)
-        print Layer
         i = len(Layer)
         c1 = 0
         allocation_dict = {}
@@ -203,7 +255,6 @@ class CrowdSourcing(object):
         start = tc.clock()
         while i > 0 and c1 == 0:
             j = 0
-            print "@", i
             while j < len(Layer[i]):
                 batch = Layer[i][j]
                 c2 = 0
@@ -217,13 +268,10 @@ class CrowdSourcing(object):
                         time = time + self.worker_task_estimated_completed_time[wid][tid]
                         if time > self.task_due_date[tid]:
                             c3 = 1
-                            print 'time'
                         if Psi(t + 1) * self.task_budget[tid] < self.worker_wage[wid]:
                             c3 = 1
-                            print 'money'
                     if c3 == 0:
                         allocation_dict[wid] = batch
-                        print allocation_dict
                         W.remove(wid)
                         c2 = 1
                         Layer[i].remove(batch)
@@ -233,13 +281,10 @@ class CrowdSourcing(object):
                                 b = Layer[k][e]
                                 relation = set(b).difference(batch)
                                 if len(relation) == 0:  # b 被包含于 batch
-                                    print "-", Layer[k]
                                     Layer[k].remove(b)
-                                    print "#", Layer[k]
                                     e -= 1
                                 e += 1
                         j -= 1
-                        print Layer, i
                     Wtemp.remove(wid)
                     if len(Wtemp) == 0:
                         c2 = 1
@@ -249,7 +294,7 @@ class CrowdSourcing(object):
                 if len(Layer[i]) == 0:
                     c1 = 1
         end = tc.clock()
-        print end - start
+        print end - start, 'time'
         return allocation_dict
 
     # core-based batch formation and allocation
@@ -274,9 +319,9 @@ class CrowdSourcing(object):
                 core_tid = tid_i
         return core_tid
 
-    def getCoreBasedCVOfSingleWorker(self, workerid, taskid):
+    def getCoreBasedCVOfSingleWorker(self, workerid, taskid):  # ok
         up = len(set(self.worker_skills[workerid]) & set(self.task_skills[taskid]))
-        down = len(self.task_skills[taskid])
+        down = len(set(self.worker_skills[workerid]) | set(self.task_skills[taskid]))
         CB = float(up) / down
         R = float(self.worker_reputation[workerid])
         Occ = float(self.worker_wage[workerid]) / self.task_budget[taskid]
@@ -284,15 +329,15 @@ class CrowdSourcing(object):
         result = (self.cBeta[0] * CB + self.cBeta[1] * R) / (self.cBeta[2] * Occ + self.cBeta[3] * Est)
         return result
 
-    def getCoreBasedCV(self, workerid, taskid):
+    def getCoreBasedCV(self, workerid, taskid):  # ok
         result = self.getCoreBasedCVOfSingleWorker(workerid, taskid)
         sum = 0
-        for wid in range(len(self.worker_skills)):
+        for wid in xrange(len(self.worker_skills)):
             if wid != workerid:
                 sum += (self.getCoreBasedCVOfSingleWorker(wid, taskid) / float(self.worker_distance[wid][workerid]))
         return self.cAlpha[0] * result + self.cAlpha[1] * sum
 
-    def argMaxCoreBasedCV(self, Wset, taskid):
+    def argMaxCoreBasedCV(self, Wset, taskid):  # ok
         max_wid = -1
         max_CV = -1
         for wid in Wset:
@@ -302,7 +347,7 @@ class CrowdSourcing(object):
                 max_wid = wid
         return max_wid
 
-    def argMaxCoreBasedSimilarTask(self, core_tid, TidSet):
+    def argMaxCoreBasedSimilarTask(self, core_tid, TidSet):  # ok
         max_id = -1
         max_theta = -1
         for tid in TidSet:
@@ -313,10 +358,10 @@ class CrowdSourcing(object):
                     max_id = tid
         return max_id
 
-    def CoreBasedBatchAllocation(self):
+    def CoreBasedBatchAllocation(self):  # ok
         c1 = 0
-        TidSet = [i for i in range(len(self.task_skills))]
-        W = [i for i in range(len(self.worker_skills))]
+        TidSet = [i for i in xrange(len(self.task_skills))]
+        W = [i for i in xrange(len(self.worker_skills))]
         allocation_dict = {}
         while c1 == 0:
             core_tid = self.argMaxSumOfSimilaritiesWithOtherTasks(TidSet)
@@ -341,13 +386,12 @@ class CrowdSourcing(object):
             while c3 == 0:
                 tb = self.argMaxCoreBasedSimilarTask(core_tid, TidSetTemp)
                 if tb != -1:
-                    if self.worker_task_estimated_completed_time[wid][tb] <= self.task_due_date[tb] and Psi(k + 1) * self.task_budget[tb] >= self.worker_wage[wid]:
+                    if time + self.worker_task_estimated_completed_time[wid][tb] <= self.task_due_date[tb] and Psi(k + 1) * self.task_budget[tb] >= self.worker_wage[wid]:
                         time += self.worker_task_estimated_completed_time[wid][tb]
                         k += 1
                         allocation_dict[wid].append(tb)
                         TidSet.remove(tb)
                     TidSetTemp.remove(tb)
-
                 if len(TidSetTemp) == 0:
                     c3 = 1
             if len(TidSet) == 0:
@@ -405,4 +449,14 @@ if __name__ == "__main__":
     end = tc.clock()
     print end - start
     print crowds.OverlappingDegreeOfTask(0, 5)
-    print crowds.argMaxSumOfSimilaritiesWithOtherTasks([i for i in range(6)])
+    core_id = crowds.argMaxSumOfSimilaritiesWithOtherTasks([i for i in range(6)])
+    crowds.cBeta = [0.3, 0.2, 0.3, 0.2]
+    print crowds.getCoreBasedCVOfSingleWorker(2, 5)
+    crowds.cAlpha = [0.5, 0.5]
+    print crowds.getCoreBasedCV(1, 5)
+    print crowds.argMaxCoreBasedCV([i for i in range(6)], 5)
+    print 'core_id'
+    print core_id
+    print crowds.argMaxCoreBasedSimilarTask(core_id, [i for i in range(6)])
+    print crowds.CoreBasedBatchAllocation()
+    print crowds.RetailStyleAllocation2()
